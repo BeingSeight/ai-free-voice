@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BOL internal text to voice AI</title>
+<style>body{font-family:system-ui;max-width:640px;margin:40px auto;padding:0 16px}textarea{width:100%;height:140px;font-size:16px}button{font-size:16px;padding:10px 22px;margin:8px 0}audio{width:100%;margin-top:12px}#msg{color:#b00;min-height:1.2em}</style>
+</head><body>
+<h1>BOL internal text to voice AI</h1>
+<textarea id="t" placeholder="Type or paste your script here..."></textarea><br>
+<button id="gen">Generate voice</button>
+<div id="msg"></div>
+<audio id="player" controls hidden></audio><br>
+<a id="dl" hidden download="voice.wav">⬇ Download WAV</a>
+<script>
+const $=id=>document.getElementById(id), gen=$("gen"), msg=$("msg");
+let cooldown=0;
+async function pollStatus(){
+  const s=await(await fetch("/api/status")).json();
+  if(!s.ready){msg.textContent="Not configured yet — ask the admin to set the API key & voice (server-side).";gen.disabled=true;return;}
+  cooldown=s.rate.ok?0:Math.max(1,s.rate.waitSeconds);
+  gen.disabled=!!cooldown;
+  gen.textContent=cooldown?`Wait ${cooldown}s (rate limit)`:"Generate voice";
+  if(!cooldown&&!msg.dataset.keep)msg.textContent=`Ready · ${s.rate.usedToday}/${s.rate.maxPerDay} used today`;
+}
+gen.onclick=async()=>{
+  msg.dataset.keep=1;gen.disabled=true;msg.textContent="Generating...";
+  try{
+    const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("t").value})});
+    const ct=r.headers.get("content-type")||"";
+    if(ct.includes("audio/")){ // deployed (Vercel): generate returns WAV bytes directly
+      const blob=await r.blob(); const url=URL.createObjectURL(blob);
+      $("player").src=url;$("player").hidden=false;$("player").play().catch(()=>{});
+      $("dl").href=url;$("dl").hidden=false;
+      msg.textContent="Done";msg.dataset.keep="";
+    }else{ // local server: generate returns JSON with audioUrl
+      const j=await r.json(); if(!r.ok)throw new Error(j.error||"Failed");
+      $("player").src=j.audioUrl+"?t="+Date.now();$("player").hidden=false;$("player").play().catch(()=>{});
+      $("dl").href="/api/download?t="+Date.now();$("dl").hidden=false;
+      msg.textContent=j.duration?`Done · ${j.duration.toFixed(1)}s`:"Done";msg.dataset.keep="";
+    }
+  }catch(e){msg.textContent=e.message;} finally{pollStatus();}
+};
+$("t").maxLength=5000; pollStatus(); setInterval(pollStatus,1000);
+</script></body></html>

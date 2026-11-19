@@ -1,0 +1,7 @@
+.env
+node_modules/
+.vercel/
+*.wav
+cloned-voice-id.txt
+output.mp3
+.vercel
