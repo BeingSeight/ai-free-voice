@@ -102,7 +102,7 @@ http.createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname; // ignore ?t= cache-buster
   try {
     if (pathname === "/") return send(200, html, "text/html");
-    if (pathname === "/api/status") return send(200, { ready: !!CONFIG.openRouterApiKey, provider: "openrouter", model: CONFIG.model, maxChars: CONFIG.maxChars, rate: limiter.status() });
+    if (pathname === "/api/status") return send(200, { ready: !!CONFIG.heygenApiKey, provider: "heygen", model: "heygen-voice-1-turbo-free", maxChars: CONFIG.maxChars, rate: limiter.status() });
     // Play in browser: inline (attachment makes some browsers refuse to play)
     if (pathname === "/api/last-audio" && lastAudio) { res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": lastAudio.length, "Cache-Control": "no-store" }); return res.end(lastAudio); }
     // Download: attachment
