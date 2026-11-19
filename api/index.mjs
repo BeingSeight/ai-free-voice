@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     res.statusCode = code; res.setHeader("Content-Type", type);
     res.end(typeof body === "string" ? body : JSON.stringify(body));
   };
-  const pathname = req.headers["x-matched-path"] || new URL(req.url, "http://localhost").pathname;
+  const raw = req.url || ""; const pathname = raw.includes("generate") ? "/api/generate" : raw.includes("status") ? "/api/status" : (req.headers["x-matched-path"] || new URL(raw, "http://localhost").pathname);
   try {
     if (pathname === "/") return send(200, readFileSync(process.cwd() + "/index.html", "utf8"), "text/html");
     if (pathname === "/api/status")
