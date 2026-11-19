@@ -60,7 +60,7 @@ export default async function handler(req, res) {
   try {
     if (pathname === "/") return send(200, readFileSync(process.cwd() + "/index.html", "utf8"), "text/html");
     if (pathname === "/api/status")
-      return send(200, { ready: !!CONFIG.openRouterApiKey, provider: "openrouter", model: CONFIG.model, maxChars: CONFIG.maxChars, rate: limiter.status() });
+      return send(200, { ready: !!CONFIG.heygenApiKey, provider: "heygen", model: "heygen-voice-1-turbo-free", maxChars: CONFIG.maxChars, rate: limiter.status() });
 
     if (pathname === "/api/generate" && req.method === "POST") {
       const chunks = []; for await (const c of req) chunks.push(c);
