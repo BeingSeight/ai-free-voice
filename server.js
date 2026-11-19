@@ -63,53 +63,26 @@ let lastAudio = null; // last generated audio (binary MP3 buffer), served at /ap
 // OpenRouter TTS: POST {base}/audio/speech
 // Body: { model, input, voice, speed, response_format }
 // Response: raw audio byte-stream (mp3 when response_format="mp3")
-async function callOpenRouterTTS(text) {
-  const headers = {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${CONFIG.openRouterApiKey}`,
-    "HTTP-Referer": "http://localhost:3000",   // optional attribution headers
-    "X-Title": "Text to Voice",
-  };
-  // Optional: bring-your-own HeyGen key to use a cloned voice from your HeyGen account.
-  // OpenRouter passes provider-specific auth through; set only if you cloned a voice.
-  if (CONFIG.heygenApiKey) headers["X-HeyGen-Api-Key"] = CONFIG.heygenApiKey;
-
-  const r = await fetch(`${CONFIG.openRouterBaseUrl}/audio/speech`, {
+async function callHeyGenTTS(text) {
+  const r = await fetch("https://api.heygen.com/v3/models/audio/tts", {
     method: "POST",
-    headers,
-    body: JSON.stringify({
-      model: CONFIG.model,
-      input: text,
-      voice: CONFIG.voice || undefined,
-      speed: CONFIG.speed,
-      response_format: "pcm", // OpenRouter/HeyGen only supports PCM -> converted to WAV in server
-    }),
+    headers: { "Content-Type": "application/json", "x-api-key": CONFIG.heygenApiKey },
+    body: JSON.stringify({ model: "heygen-voice-1-turbo-free", text, voice_id: "330290724a1b470fb63153f34d4c0183" }),
   });
-
   if (r.status === 429) {
-    // Honor Retry-After + X-RateLimit-Reset when OpenRouter sends them
-    const retry = Number(r.headers.get("retry-after")) || 60;
+    const retry = Number(r.headers.get("retry-after")) || 10;
     limiter.penalize(retry);
-    throw Object.assign(new Error(`OpenRouter rate limit (429) — retry in ${retry}s`), { status: 429, retryAfter: retry });
+    throw Object.assign(new Error(`HeyGen rate limit (429) — retry in ${retry}s`), { status: 429, retryAfter: retry });
   }
   if (!r.ok) {
     const body = (await r.text()).slice(0, 400);
-    let msg = body;
-    try { msg = JSON.parse(body)?.error?.message || body; } catch {}
-    throw Object.assign(new Error(`OpenRouter error ${r.status}: ${msg}`), { status: r.status });
+    let msg = body; try { msg = JSON.parse(body)?.error?.message || body; } catch {}
+    throw Object.assign(new Error(`HeyGen error ${r.status}: ${msg}`), { status: r.status });
   }
-
-  const ct = r.headers.get("content-type") || "";
-  if (ct.includes("application/json")) {
-    // Some providers return JSON with a URL/base64 instead of raw bytes — handle both
-    const j = await r.json();
-    const url = j.audio_url || j.url || j.data?.audio_url;
-    if (url) return { audioUrl: url };
-    if (j.audio) { lastAudio = pcmToWav(Buffer.from(j.audio, "base64")); return { audioUrl: "/api/last-audio" }; }
-    throw new Error("Unexpected JSON response from TTS provider (no audio found)");
-  }
-  lastAudio = pcmToWav(Buffer.from(await r.arrayBuffer())); // raw PCM -> WAV (normal case)
-  return { audioUrl: "/api/last-audio" };
+  const j = await r.json();
+  const url = j.data?.audio_url; const dur = j.data?.duration;
+  if (!url) throw new Error("No audio_url in HeyGen response");
+  return { audioUrl: url, duration: dur };
 }
 
 // ---------- PCM -> WAV (OpenRouter/HeyGen returns raw 44.1kHz mono PCM) ----------
@@ -139,7 +112,7 @@ http.createServer(async (req, res) => {
       if (!text) return send(400, { error: "Text is empty." });
       if (text.length > CONFIG.maxChars) return send(400, { error: `Too long — max ${CONFIG.maxChars} characters.` });
       await limiter.acquire();
-      try { const r = await callOpenRouterTTS(text); limiter.record(); return send(200, r); }
+      try { const r = await callHeyGenTTS(text); limiter.record(); return send(200, r); }
       finally { limiter.release(); }
     }
     send(404, { error: "Not found" });

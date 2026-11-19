@@ -69,41 +69,26 @@ export default async function handler(req, res) {
       if (text.length > CONFIG.maxChars) return send(400, { error: `Too long — max ${CONFIG.maxChars} characters.` });
       await limiter.acquire();
       try {
-        const headers = {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${CONFIG.openRouterApiKey}`,
-          "HTTP-Referer": "https://text-to-voice.vercel.app",
-          "X-Title": "Text to Voice",
-        };
-        if (CONFIG.heygenApiKey) headers["X-HeyGen-Api-Key"] = CONFIG.heygenApiKey;
-        const r = await fetch(`${CONFIG.openRouterBaseUrl}/audio/speech`, {
-          method: "POST", headers,
-          body: JSON.stringify({ model: CONFIG.model, input: text, voice: CONFIG.voice || undefined, speed: CONFIG.speed, response_format: "pcm" }),
+        const r = await fetch("https://api.heygen.com/v3/models/audio/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": CONFIG.heygenApiKey },
+          body: JSON.stringify({ model: "heygen-voice-1-turbo-free", text, voice_id: "330290724a1b470fb63153f34d4c0183" }),
         });
         if (r.status === 429) {
-          const retry = Number(r.headers.get("retry-after")) || 60;
+          const retry = Number(r.headers.get("retry-after")) || 10;
           limiter.penalize(retry);
-          return send(429, { error: `OpenRouter rate limit (429) — retry in ${retry}s`, retryAfter: retry });
+          return send(429, { error: `HeyGen rate limit (429) — retry in ${retry}s`, retryAfter: retry });
         }
         if (!r.ok) {
           const body = (await r.text()).slice(0, 400);
           let msg = body; try { msg = JSON.parse(body)?.error?.message || body; } catch {}
-          return send(r.status, { error: `OpenRouter error ${r.status}: ${msg}` });
+          return send(r.status, { error: `HeyGen error ${r.status}: ${msg}` });
         }
-        const ct = r.headers.get("content-type") || "";
-        let pcm;
-        if (ct.includes("application/json")) {
-          const j = await r.json();
-          const url = j.audio_url || j.url || j.data?.audio_url;
-          if (url) { limiter.record(); return send(200, { audioUrl: url }); }
-          if (j.audio) pcm = Buffer.from(j.audio, "base64");
-          else return send(500, { error: "Unexpected JSON response from TTS provider (no audio found)" });
-        } else pcm = Buffer.from(await r.arrayBuffer());
-        const wav = pcmToWav(pcm);
+        const j = await r.json();
+        const url = j.data?.audio_url; const dur = j.data?.duration;
+        if (!url) return send(500, { error: "No audio_url in HeyGen response" });
         limiter.record();
-        res.statusCode = 200; res.setHeader("Content-Type", "audio/wav");
-        res.setHeader("Content-Length", wav.length); res.setHeader("Cache-Control", "no-store");
-        return res.end(wav);
+        return send(200, { audioUrl: url, duration: dur });
       } finally { limiter.release(); }
     }
     send(404, { error: "Not found" });
